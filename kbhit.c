@@ -24,7 +24,7 @@
 static struct termios orig_termios;
 
 static void reset_terminal_mode(void) {
-  tcsetattr(STDIN_FILENO, TCSANOW, &orig_termios);
+  tcsetattr(STDIN_FILENO, TCSADRAIN, &orig_termios);
 }
 #endif /* _WIN32 */
 
@@ -32,11 +32,26 @@ void setup_terminal_mode(void) {
 #ifndef _WIN32
   struct termios new_termios;
 
+  if (!isatty(STDIN_FILENO))
+    return;
+
   tcgetattr(STDIN_FILENO, &orig_termios);
   new_termios = orig_termios;
-  new_termios.c_lflag &= ~(ICANON | ECHO);
-  tcsetattr(STDIN_FILENO, TCSANOW, &new_termios);
 
+  /* input modes: no break, no CR to NL, no parity check, no strip char,
+   * no start/stop output control. */
+  new_termios.c_iflag &= ~(BRKINT | ICRNL | INPCK | ISTRIP | IXON);
+  /* control modes - set 8 bit chars */
+  new_termios.c_cflag |= (CS8);
+  /* local modes - choing off, canonical off, no extended functions,
+   * no signal chars (^Z,^C) */
+  new_termios.c_lflag &= ~(ECHO | ICANON | IEXTEN | ISIG);
+  /* control chars - set return condition: min number of bytes and timer.
+   * We want read to return every single byte, without timeout. */
+  new_termios.c_cc[VMIN] = 1;  /* 1 byte  */
+  new_termios.c_cc[VTIME] = 0; /* no timer */
+
+  tcsetattr(STDIN_FILENO, TCSADRAIN, &new_termios);
   atexit(reset_terminal_mode);
 #endif /* _WIN32 */
 }
@@ -44,7 +59,7 @@ void setup_terminal_mode(void) {
 int kbhit(void) {
 #ifdef _WIN32
   return _kbhit();
-#else /* _WIN32 */
+#else  /* _WIN32 */
   int oldf, ch;
 
   oldf = fcntl(STDIN_FILENO, F_GETFL, 0);
@@ -66,7 +81,7 @@ int kbhit(void) {
 int getch(void) {
 #ifdef _WIN32
   return _getch();
-#else /* _WIN32 */
+#else  /* _WIN32 */
   return getchar();
 #endif /* _WIN32 */
 }
